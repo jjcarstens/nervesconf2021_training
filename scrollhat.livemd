@@ -1,0 +1,18 @@
+# Scroll Hat Mini
+
+## Prerequisites
+
+```elixir
+Mix.install([:scroll_hat])
+```
+
+## Initialization
+
+```elixir
+ScrollHat.Display.start_link()
+```
+
+```elixir
+canvas = ScrollHat.Font.graph("howdy")
+ScrollHat.Display.draw(canvas)
+```
