@@ -1,1 +1,1 @@
-# nervesconf_books
+# NervesConf 2021 - Training

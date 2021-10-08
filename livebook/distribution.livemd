@@ -1,0 +1,23 @@
+# Distribution tests
+
+## Section
+
+```elixir
+Node.get_cookie()
+```
+
+```elixir
+Phoenix.PubSub.Supervisor.start_link(name: :nerves)
+```
+
+```elixir
+Node.ping(:"livebook@100meter.local")
+```
+
+```elixir
+Phoenix.PubSub.subscribe(:nerves, "greetings")
+```
+
+```elixir
+Phoenix.PubSub.broadcast(:nerves, "greetings", "hello")
+```
