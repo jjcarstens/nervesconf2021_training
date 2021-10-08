@@ -1,0 +1,142 @@
+# Chaos Monkey!
+
+## Stalk who has Erlang distribution
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.3.0"},
+  {:vega_lite, "~> 0.1.0"}
+])
+```
+
+We need to use longnames for this next part
+
+```elixir
+{:ok, host} = :inet.gethostname()
+Node.stop()
+
+Node.start(:"chaos@#{host}.local")
+Node.set_cookie(:nerves_livebook_cookie)
+```
+
+Now let's start multicasting some queries to discover who has Erlang distribution
+enabled on the network
+
+```elixir
+alias VegaLite, as: Vl
+epmd_query = {:dns_query, '_epmd._tcp.local', :ptr, :in}
+
+widget =
+  Vl.new(width: 400, height: 300)
+  |> Vl.mark(:line, point: true)
+  |> Vl.encode_field(:x, "time", type: :ordinal)
+  |> Vl.encode_field(:y, "duration", title: "Duration (μs)", type: :ordinal)
+  |> Kino.VegaLite.new()
+  |> tap(&Kino.render/1)
+
+Kino.VegaLite.periodically(widget, 30_000, 0, fn i ->
+  s = System.monotonic_time(:microsecond)
+  MdnsLite.Responder.multicast_all(epmd_query)
+  e = System.monotonic_time(:microsecond)
+
+  point = %{time: "#{Time.utc_now()}", duration: e - s}
+
+  Kino.VegaLite.push(widget, point, window: 20)
+
+  {:cont, i + 1}
+end)
+```
+
+## Take over LED's 👺🙉🙊
+
+Let's make a module to organize our mischief
+
+```elixir
+defmodule Monkey do
+  use GenServer
+
+  def start_or_update(hostname, widget) do
+    case GenServer.start(__MODULE__, [hostname, widget], name: :"monkey_#{hostname}") do
+      {:error, {:already_started, p}} ->
+        GenServer.call(p, {:update_widget, widget})
+        {:ok, p}
+
+      res ->
+        res
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:update_widget, widget}, _from, state) do
+    {:reply, :ok, %{state | widget: widget}, 100}
+  end
+
+  @impl GenServer
+  def init([hostname, widget]) do
+    Process.send_after(self(), :push_results, 5000)
+    state = %{node: :"livebook@#{hostname}", results: [], widget: widget}
+    {:ok, state, 1}
+  end
+
+  @impl GenServer
+  def handle_info(:push_results, state) do
+    Process.send_after(self(), :push_results, 5000)
+    Kino.VegaLite.push_many(state.widget, state.results)
+    {:noreply, %{state | results: []}, 100}
+  end
+
+  def handle_info(:timeout, %{results: results} = state) do
+    result = %{result: takeover_led(state.node), time: now()}
+    {:noreply, %{state | results: [result | results]}, 100}
+  end
+
+  defp takeover_led(node) do
+    canvas =
+      Stream.map(1..119, fn _ -> Enum.random(0..10) end)
+      |> Enum.chunk_every(17)
+
+    with :pong <- Node.ping(node),
+         _ = Node.spawn(node, ScrollHat.Display, :start_link, []),
+         :ok <- GenServer.call({ScrollHat.Display, node}, {:draw, canvas}) do
+      :ok
+    else
+      _ -> :error
+    end
+  catch
+    _, _ -> :error
+  end
+
+  defp now() do
+    Time.utc_now()
+    |> Calendar.strftime("%H:%M")
+  end
+end
+```
+
+Now query the results of our multicast and start some chaos monkeys for those hosts
+to continually change the LED matrix of the ScrollHat
+
+```elixir
+widget =
+  Vl.new(width: 300, height: 200)
+  |> Vl.mark(:bar)
+  |> Vl.encode_field(:x, "time", type: :ordinal)
+  |> Vl.encode(:y, aggregate: :count, type: :quantitative, title: "results")
+  |> Vl.encode_field(:color, "result", type: :nominal)
+  |> Kino.VegaLite.new()
+  |> tap(&Kino.render/1)
+
+# Check for potentially new victims every 15 secs
+Kino.VegaLite.periodically(widget, 15_000, 0, fn i ->
+  %{additional: records} = MdnsLite.Responder.query_all_caches(epmd_query)
+
+  # Try starting each monkey. It will report its choas
+  # directly to the widget every 5 minutes
+  for {:dns_rr, _service, :srv, :in, _, _, {_, _, _, hostname}, _, _, _} <- records,
+      String.starts_with?(to_string(hostname), "nerves-"),
+      uniq: true,
+      do: Monkey.start_or_update(hostname, widget)
+
+  {:cont, i + 1}
+end)
+```
