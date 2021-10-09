@@ -1,23 +1,126 @@
-# Distribution tests
+# Distribution
 
-## Section
+## Find you table peeps
+
+Try grouping everyone at your table together in a cluster. Ask your neighbor what the last 4
+of their serial number is and enter below to ping them.
+
+**Fun Fact:** When you connect to a node, you'll inherit all the nodes _that_ node already knows about.
+So it really only takes one person to gather all the serial numbers and enter them below 😉
+
+<!-- livebook:{"livebook_object":"cell_input","name":"neighbor","type":"text","value":"f6c8"} -->
 
 ```elixir
-Node.get_cookie()
+serial = IO.gets("neighbor") |> String.trim()
+
+if byte_size(serial) == 4 do
+  Node.ping(:"livebook@nerves-#{serial}.local")
+else
+  "Bad last 4 of serial - try again"
+end
 ```
+
+If you don't wish to connect to your neighbors, or want more connections, then spin
+up an IEx session on your host to communicate with
+
+```
+iex --name me@youhost.local --cookie nerves_livebook_cookie
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+Once done, check all the nodes you know about
+
+```elixir
+Node.list()
+```
+
+## Phoenix PubSub
+
+Now that we're connected, there are a few ways devices can communicate with each other. One
+of the easiest is by using [`PhoenixPubSub`](https://hexdocs.pm/phoenix_pubsub). But fret not -
+despite the name, this does not require [`:phoenix`](https://hexdocs.pm/phoenix) as a dependency
+and the name is just a relic of the context which it was originally developed for.
+
+First we need to start a supervisor for it. Typically this would be done in your supervision
+tree, but we'll manually do it here.
 
 ```elixir
 Phoenix.PubSub.Supervisor.start_link(name: :nerves)
 ```
 
-```elixir
-Node.ping(:"livebook@100meter.local")
-```
+Now subscribe to some topics that your neighbors can communicate with you on
 
 ```elixir
-Phoenix.PubSub.subscribe(:nerves, "greetings")
+defmodule Watcher do
+  use GenServer
+
+  def start(opts \\ []) do
+    GenServer.start(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl GenServer
+  def init(_opts) do
+    Phoenix.PubSub.subscribe(:nerves, "greetings")
+    {:ok, %{}}
+  end
+
+  @impl GenServer
+  def handle_info(msg, state) do
+    IO.inspect(msg)
+    {:noreply, state}
+  end
+end
+
+Watcher.start()
 ```
 
+Now that we're all subscribed, send some messages on that topic for your neighbors
+to see on their device
+
 ```elixir
-Phoenix.PubSub.broadcast(:nerves, "greetings", "hello")
+{:ok, hostname} = :inet.gethostname()
+Phoenix.PubSub.broadcast_from(:nerves, self(), "greetings", "hello from #{hostname}")
+```
+
+## PG
+
+By default `Phoenix.PubSub` uses the Erlang [`:pg`](https://erlang.org/doc/man/pg.html) adapter
+behind the scenes. We can also manage this manually.
+
+```elixir
+:pg.start(:nerves_pg)
+
+defmodule WatcherPG do
+  use GenServer
+
+  def start(opts \\ []) do
+    GenServer.start(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl GenServer
+  def init(_opts) do
+    :pg.join(:nerves_pg, :greetings, self())
+    {:ok, %{}}
+  end
+
+  @impl GenServer
+  def handle_info(msg, state) do
+    IO.inspect(msg)
+    {:noreply, state}
+  end
+end
+
+WatcherPG.start()
+```
+
+Now ensure other members of your group have run the above commands, then run
+
+```elixir
+for neighbor <- :pg.get_members(:nerves_pg, :greetings) do
+  {:ok, hostname} = :inet.gethostname()
+  send(neighbor, "hello from #{hostname} via :pg")
+end
+
+:done
 ```
