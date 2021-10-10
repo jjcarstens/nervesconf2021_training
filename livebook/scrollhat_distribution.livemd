@@ -1,0 +1,41 @@
+# Scroll HAT Distribution
+
+## Remote LED's
+
+Now that you've dabbled with Erlang distribution with neighbors around the table,
+let's make things a little more interesting 👺
+
+Another feature of distribution is baked right into `GenServer` naming. You
+can target a module on a remote node with the `GenServer.*` functions.
+
+For example, pick a neighbor's hostname and try this out:
+
+<!-- livebook:{"livebook_object":"cell_input","name":"neighbor","type":"text","value":"f6c8"} -->
+
+```elixir
+serial = IO.gets("neighbor") |> String.trim()
+neighbor = :"livebook@nerves-#{serial}.local"
+
+if byte_size(serial) == 4 do
+  # Make sure we're connected
+  Node.ping(neighbor)
+
+  GenServer.call({ScrollHat.Display, neighbor}, {:set_brightness, 5})
+  GenServer.call({ScrollHat.Display, neighbor}, {:set_font, ScrollHat.Font.Unicode})
+  GenServer.call({ScrollHat.Display, neighbor}, {:marquee, " howdy neighbor ", 150})
+else
+  "Bad last 4 of serial - try again"
+end
+```
+
+Cool, eh?! 🍻
+
+The downside is that you would need to know the internal client specific code which
+is typically internal API. However, you can also accomplish the same effect via
+the Erlang [`:rpc`](https://erlang.org/doc/man/rpc.html) module and use the
+user defined module and function API you already know
+
+```elixir
+:rpc.call(neighbor, ScrollHat.Display, :set_font, [ScrollHat.Font.Hachicro])
+:rpc.call(neighbor, ScrollHat.Display, :marquee, [" Nerves ", 120])
+```
