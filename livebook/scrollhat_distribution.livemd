@@ -8,15 +8,24 @@ let's make things a little more interesting 👺
 Another feature of distribution is baked right into `GenServer` naming. You
 can target a module on a remote node with the `GenServer.*` functions.
 
-For example, pick a neighbor's hostname and try this out:
+Let's look at what neighbors you know about at your table:
 
-<!-- livebook:{"livebook_object":"cell_input","name":"neighbor","type":"text","value":"f6c8"} -->
+<!-- livebook:{"force_markdown":true} -->
 
 ```elixir
-serial = IO.gets("neighbor") |> String.trim()
-neighbor = :"livebook@nerves-#{serial}.local"
+Node.list()
+```
 
-if byte_size(serial) == 4 do
+<!-- livebook:{"break_markdown":true} -->
+
+Now pick a neighbor from there
+
+<!-- livebook:{"livebook_object":"cell_input","name":"neighbor","type":"text","value":""} -->
+
+```elixir
+neighbor = IO.gets("neighbor") |> String.trim()
+
+if neighbor != "" do
   # Make sure we're connected
   Node.ping(neighbor)
 
@@ -24,7 +33,7 @@ if byte_size(serial) == 4 do
   GenServer.call({ScrollHat.Display, neighbor}, {:set_font, ScrollHat.Font.Unicode})
   GenServer.call({ScrollHat.Display, neighbor}, {:marquee, " howdy neighbor ", 150})
 else
-  "Bad last 4 of serial - try again"
+  "No neighbor selected - skipping"
 end
 ```
 
