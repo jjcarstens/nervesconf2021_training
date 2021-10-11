@@ -23,7 +23,7 @@ Now pick a neighbor from there
 <!-- livebook:{"livebook_object":"cell_input","name":"neighbor","type":"text","value":""} -->
 
 ```elixir
-neighbor = IO.gets("neighbor") |> String.trim()
+neighbor = IO.gets("neighbor") |> String.trim() |> String.to_atom()
 
 if neighbor != "" do
   # Make sure we're connected
